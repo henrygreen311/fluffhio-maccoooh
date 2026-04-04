@@ -1,48 +1,85 @@
 const express = require("express");
-const fs = require("fs");
-const fetch = require("node-fetch");
-const cors = require("cors");
-
+const fetch = require("node-fetch"); // npm install node-fetch@2
 const app = express();
-app.use(cors()); // <--- allow all origins
-app.use(express.json());
+const PORT = 444;
 
-app.post("/api/check", async (req, res) => {
+// Helper function to extract the X API profile data
+function extractProfileData(xData) {
+  const user = xData?.data?.user?.result;
+  const legacy = user?.legacy || {};
+
+  return {
+    name: user?.core?.name || null,
+    screen_name: user?.core?.screen_name || null,
+    description: legacy?.description || null,
+    followers_count: legacy?.followers_count || 0,
+    friends_count: legacy?.friends_count || 0,
+    exists: !!user,
+    protected: user?.privacy?.protected ?? null,
+    suspended: null // X API does not directly return suspension, default null
+  };
+}
+
+// Helper function to extract shadowban tests
+function extractShadowbanData(shadowData) {
+  return {
+    search: shadowData?.tests?.search || null,
+    typeahead: shadowData?.tests?.typeahead || false,
+    ghostban: {
+      ban: shadowData?.tests?.ghost?.ban ?? null
+    },
+    more_replies: {
+      ban: shadowData?.tests?.more_replies?.ban ?? null
+    }
+  };
+}
+
+app.get("/:username", async (req, res) => {
+  const username = req.params.username;
+
   try {
-    const { username } = req.body;
-    if (!username) return res.status(400).json({ error: "No username provided" });
+    // 1️⃣ Fetch X API data
+    const xUrl = `https://api.x.com/graphql/IGgvgiOx4QZndDHuD3x9TQ/UserByScreenName?variables=${encodeURIComponent(
+      JSON.stringify({ screen_name: username, withGrokTranslatedBio: false })
+    )}&features=${encodeURIComponent(
+      JSON.stringify({ responsive_web_graphql_timeline_navigation_enabled: true })
+    )}`;
 
-    const encodedUsername = encodeURIComponent(username);
-
-    const url = `https://api.x.com/graphql/IGgvgiOx4QZndDHuD3x9TQ/UserByScreenName?variables=%7B%22screen_name%22%3A%22${encodedUsername}%22%2C%22withGrokTranslatedBio%22%3Afalse%7D&features=%7B%22hidden_profile_subscriptions_enabled%22%3Atrue%2C%22profile_label_improvements_pcf_label_in_post_enabled%22%3Atrue%2C%22responsive_web_profile_redirect_enabled%22%3Afalse%2C%22rweb_tipjar_consumption_enabled%22%3Afalse%2C%22verified_phone_label_enabled%22%3Afalse%2C%22subscriptions_verification_info_is_identity_verified_enabled%22%3Atrue%2C%22subscriptions_verification_info_verified_since_enabled%22%3Atrue%2C%22highlights_tweets_tab_ui_enabled%22%3Atrue%2C%22responsive_web_twitter_article_notes_tab_enabled%22%3Atrue%2C%22subscriptions_feature_can_gift_premium%22%3Atrue%2C%22creator_subscriptions_tweet_preview_api_enabled%22%3Atrue%2C%22responsive_web_graphql_skip_user_profile_image_extensions_enabled%22%3Afalse%2C%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%7D&fieldToggles=%7B%22withPayments%22%3Afalse%2C%22withAuxiliaryUserLabels%22%3Atrue%7D`;
-
-    const response = await fetch(url, {
-      method: "GET",
+    const xRes = await fetch(xUrl, {
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+        "Authorization": "Bearer YOUR_BEARER_TOKEN",
+        "User-Agent": "Mozilla/5.0",
         Accept: "*/*",
         "Content-Type": "application/json",
-        Authorization:
-          "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
-        "X-Twitter-Client-Language": "en",
-        "X-Twitter-Active-User": "yes",
-        Origin: "https://x.com",
-        Referer: "https://x.com/"
-      }
+      },
     });
 
-    const data = await response.text();
-    fs.writeFileSync("x-api.json", data);
-    res.json({ success: true, data: JSON.parse(data) });
+    const xData = await xRes.json();
+    const profileData = extractProfileData(xData);
 
+    // 2️⃣ Fetch shadowban API
+    const shadowUrl = `https://shadowban-api.yuzurisa.com:444/${username}`;
+    const shadowRes = await fetch(shadowUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        Accept: "*/*",
+      },
+    });
+
+    const shadowData = await shadowRes.json();
+    const testsData = extractShadowbanData(shadowData);
+
+    // 3️⃣ Combine for frontend
+    const finalResponse = {
+      "about_profile": profileData,
+      "tests": testsData
+    };
+
+    res.json(finalResponse);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Request failed" });
+    console.error("❌ Error fetching data:", err);
+    res.status(500).json({ error: "Failed to fetch user data" });
   }
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
