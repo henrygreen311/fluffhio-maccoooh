@@ -1,8 +1,10 @@
 const express = require("express");
 const fs = require("fs");
 const fetch = require("node-fetch");
+const cors = require("cors");
 
 const app = express();
+app.use(cors()); // <--- allow all origins
 app.use(express.json());
 
 app.post("/api/check", async (req, res) => {
@@ -31,10 +33,9 @@ app.post("/api/check", async (req, res) => {
     });
 
     const data = await response.text();
-
     fs.writeFileSync("x-api.json", data);
-
     res.json({ success: true, data: JSON.parse(data) });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Request failed" });
