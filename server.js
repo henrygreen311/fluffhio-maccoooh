@@ -1,85 +1,75 @@
-const express = require("express");
-const fetch = require("node-fetch"); // npm install node-fetch@2
-const app = express();
-const PORT = 444;
-
-// Helper function to extract the X API profile data
-function extractProfileData(xData) {
-  const user = xData?.data?.user?.result;
-  const legacy = user?.legacy || {};
-
-  return {
-    name: user?.core?.name || null,
-    screen_name: user?.core?.screen_name || null,
-    description: legacy?.description || null,
-    followers_count: legacy?.followers_count || 0,
-    friends_count: legacy?.friends_count || 0,
-    exists: !!user,
-    protected: user?.privacy?.protected ?? null,
-    suspended: null // X API does not directly return suspension, default null
-  };
-}
-
-// Helper function to extract shadowban tests
-function extractShadowbanData(shadowData) {
-  return {
-    search: shadowData?.tests?.search || null,
-    typeahead: shadowData?.tests?.typeahead || false,
-    ghostban: {
-      ban: shadowData?.tests?.ghost?.ban ?? null
-    },
-    more_replies: {
-      ban: shadowData?.tests?.more_replies?.ban ?? null
-    }
-  };
-}
-
-app.get("/:username", async (req, res) => {
-  const username = req.params.username;
-
+app.post("/api/check", async (req, res) => {
   try {
-    // 1️⃣ Fetch X API data
-    const xUrl = `https://api.x.com/graphql/IGgvgiOx4QZndDHuD3x9TQ/UserByScreenName?variables=${encodeURIComponent(
-      JSON.stringify({ screen_name: username, withGrokTranslatedBio: false })
-    )}&features=${encodeURIComponent(
-      JSON.stringify({ responsive_web_graphql_timeline_navigation_enabled: true })
-    )}`;
+    const { username } = req.body;
+    if (!username) {
+      return res.status(400).json({ error: "No username provided" });
+    }
+
+    const encodedUsername = encodeURIComponent(username);
+
+    // 🔹 1. X API (profile data)
+    const xUrl = `https://api.x.com/graphql/IGgvgiOx4QZndDHuD3x9TQ/UserByScreenName?variables=%7B%22screen_name%22%3A%22${encodedUsername}%22%2C%22withGrokTranslatedBio%22%3Afalse%7D&features=%7B%22responsive_web_graphql_timeline_navigation_enabled%22%3Atrue%7D`;
 
     const xRes = await fetch(xUrl, {
       headers: {
-        "Authorization": "Bearer YOUR_BEARER_TOKEN",
-        "User-Agent": "Mozilla/5.0",
-        Accept: "*/*",
-        "Content-Type": "application/json",
-      },
+        "User-Agent":
+          "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0",
+        Authorization:
+          "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
+        "X-Twitter-Active-User": "yes"
+      }
     });
 
-    const xData = await xRes.json();
-    const profileData = extractProfileData(xData);
+    const xJson = await xRes.json();
 
-    // 2️⃣ Fetch shadowban API
-    const shadowUrl = `https://shadowban-api.yuzurisa.com:444/${username}`;
-    const shadowRes = await fetch(shadowUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        Accept: "*/*",
-      },
-    });
+    // 🔹 Extract profile safely
+    const user = xJson?.data?.user?.result;
 
-    const shadowData = await shadowRes.json();
-    const testsData = extractShadowbanData(shadowData);
+    const profileData = {
+      name: user?.core?.name || null,
+      screen_name: user?.core?.screen_name || null,
+      description: user?.legacy?.description || null,
+      followers_count: user?.legacy?.followers_count || 0,
+      friends_count: user?.legacy?.friends_count || 0
+    };
 
-    // 3️⃣ Combine for frontend
+    // 🔹 2. Shadowban API
+    const sbUrl = `https://shadowban-api.yuzurisa.com:444/${encodedUsername}`;
+
+    const sbRes = await fetch(sbUrl);
+    const sbJson = await sbRes.json();
+
+    // 🔹 Extract shadowban fields
+    const profile = sbJson?.profile || {};
+    const tests = sbJson?.tests || {};
+
     const finalResponse = {
-      "about_profile": profileData,
-      "tests": testsData
+      about_profile: {
+        exists: profile.exists ?? false,
+        protected: profile.protected ?? false,
+        suspended: profile.suspended ?? false,
+        name: profileData.name,
+        screen_name: profileData.screen_name,
+        description: profileData.description,
+        followers_count: profileData.followers_count,
+        friends_count: profileData.friends_count
+      },
+      tests: {
+        search: tests.search ?? null,
+        typeahead: tests.typeahead ?? false
+      },
+      ghostban: {
+        ban: tests?.ghost?.ban ?? null
+      },
+      more_replies: {
+        ban: tests?.more_replies?.ban ?? null
+      }
     };
 
     res.json(finalResponse);
+
   } catch (err) {
-    console.error("❌ Error fetching data:", err);
-    res.status(500).json({ error: "Failed to fetch user data" });
+    console.error(err);
+    res.status(500).json({ error: "Request failed" });
   }
 });
-
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
