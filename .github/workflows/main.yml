@@ -1,4 +1,4 @@
-name: Tailscale SOCKS5 Proxy
+name: proxy
 
 on:
   workflow_dispatch:
@@ -6,6 +6,7 @@ on:
 jobs:
   proxy:
     runs-on: ubuntu-24.04
+    timeout-minutes: 350
 
     steps:
       - name: Connect Tailscale
@@ -69,6 +70,13 @@ jobs:
           nc -zv "$TS_IP" 1080
           echo "SOCKS5 proxy is listening on $TS_IP:1080"
 
-      - name: Test Tailscale Phone Connection
+      - name: Test Tailscale Connection
         run: |
           tailscale ping 100.115.100.34
+
+      - name: Keep Proxy Alive
+        run: |
+          while true; do
+            echo "SOCKS5 proxy running at $TS_IP:1080"
+            sleep 60
+          done
