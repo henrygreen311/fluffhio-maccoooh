@@ -7,11 +7,8 @@ jobs:
   proxy:
     runs-on: ubuntu-24.04
 
-    permissions:
-      contents: read
-
     steps:
-      - name: Connect to Tailscale
+      - name: Connect Tailscale
         uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
@@ -32,7 +29,7 @@ jobs:
       - name: Install Dante
         run: |
           sudo apt-get update
-          sudo apt-get install -y dante-server
+          sudo apt-get install -y dante-server netcat-openbsd
 
       - name: Configure Dante
         run: |
@@ -46,7 +43,7 @@ jobs:
           user.notprivileged: nobody
 
           client pass {
-              from: 100.64.0.0/10 to: ${TS_IP}/32
+              from: 100.64.0.0/10 to: 0.0.0.0/0
           }
 
           socks pass {
@@ -56,20 +53,22 @@ jobs:
           }
           EOF
 
+      - name: Validate Dante
+        run: |
+          sudo danted -f /etc/danted.conf -V
+
       - name: Start Dante
         run: |
           sudo systemctl restart danted
           sleep 3
-          sudo systemctl --no-pager status danted
+          sudo systemctl --no-pager --full status danted
 
-      - name: Verify Proxy
+      - name: Test SOCKS5
         run: |
-          echo "Tailscale IP: ${TS_IP}"
-          echo "SOCKS5 proxy: ${TS_IP}:1080"
           sudo ss -lntp | grep ':1080'
+          nc -zv "$TS_IP" 1080
+          echo "SOCKS5 proxy is listening on $TS_IP:1080"
 
-      - name: Keep Runner Alive
+      - name: Test Tailscale Phone Connection
         run: |
-          while true; do
-            sleep 60
-          done
+          tailscale ping 100.115.100.34
