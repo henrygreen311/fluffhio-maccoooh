@@ -21,6 +21,11 @@ jobs:
           retry: 5
           use-cache: true
 
+      - name: Enable IP forwarding
+        run: |
+          sudo sysctl -w net.ipv4.ip_forward=1
+          sudo sysctl -w net.ipv6.conf.all.forwarding=1
+
       - name: Get Tailscale IP
         run: |
           TS_IP=$(tailscale ip -4)
