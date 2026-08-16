@@ -26,6 +26,11 @@ jobs:
           sudo sysctl -w net.ipv4.ip_forward=1
           sudo sysctl -w net.ipv6.conf.all.forwarding=1
 
+      - name: Advertise Exit Node
+        run: |
+          sudo tailscale set --advertise-exit-node
+          tailscale status
+
       - name: Get Tailscale IP
         run: |
           TS_IP=$(tailscale ip -4)
@@ -79,9 +84,13 @@ jobs:
         run: |
           tailscale ping 100.115.100.34
 
+      - name: Verify Exit Node
+        run: |
+          tailscale debug prefs | grep -i exit
+
       - name: Keep Proxy Alive
         run: |
           while true; do
-            echo "SOCKS5 proxy running at $TS_IP:1080"
+            echo "Exit node active on $TS_IP"
             sleep 60
           done
