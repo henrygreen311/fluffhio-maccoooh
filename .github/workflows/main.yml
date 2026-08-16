@@ -29,13 +29,18 @@ jobs:
       - name: Advertise Exit Node
         run: |
           sudo tailscale set --advertise-exit-node
-          tailscale status
 
       - name: Get Tailscale IP
         run: |
           TS_IP=$(tailscale ip -4)
           echo "TS_IP=$TS_IP" >> "$GITHUB_ENV"
           echo "Runner Tailscale IP: $TS_IP"
+
+      - name: Check Runner Public IP
+        run: |
+          echo "GitHub runner public IP:"
+          curl -4 https://ifconfig.me
+          echo
 
       - name: Install Dante
         run: |
@@ -92,5 +97,6 @@ jobs:
         run: |
           while true; do
             echo "Exit node active on $TS_IP"
+            echo "SOCKS5 proxy running at $TS_IP:1080"
             sleep 60
           done
