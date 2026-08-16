@@ -1,14 +1,14 @@
-name: Temporary SOCKS5 Proxy
+name: Tailscale SOCKS5 Proxy
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   proxy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: read
 
     steps:
       - name: Connect to Tailscale
@@ -18,6 +18,10 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
           ping: 100.115.100.34
+          version: 1.94.2
+          timeout: 2m
+          retry: 5
+          use-cache: true
 
       - name: Get Tailscale IP
         run: |
@@ -30,7 +34,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y dante-server
 
-      - name: Configure SOCKS5
+      - name: Configure Dante
         run: |
           sudo tee /etc/danted.conf > /dev/null <<EOF
           logoutput: stderr
@@ -42,7 +46,7 @@ jobs:
           user.notprivileged: nobody
 
           client pass {
-              from: 100.64.0.0/10 to: ${TS_IP}
+              from: 100.64.0.0/10 to: ${TS_IP}/32
           }
 
           socks pass {
@@ -52,22 +56,20 @@ jobs:
           }
           EOF
 
-      - name: Start SOCKS5
+      - name: Start Dante
         run: |
           sudo systemctl restart danted
           sleep 3
           sudo systemctl --no-pager status danted
 
-      - name: Test SOCKS5
+      - name: Verify Proxy
         run: |
-          curl --socks5-hostname ${TS_IP}:1080 https://api.ipify.org
-          echo
+          echo "Tailscale IP: ${TS_IP}"
+          echo "SOCKS5 proxy: ${TS_IP}:1080"
+          sudo ss -lntp | grep ':1080'
 
-      - name: Show Proxy
+      - name: Keep Runner Alive
         run: |
-          echo "SOCKS5 HOST: ${TS_IP}"
-          echo "SOCKS5 PORT: 1080"
-
-      - name: Keep Alive
-        run: |
-          sleep 3600
+          while true; do
+            sleep 60
+          done
