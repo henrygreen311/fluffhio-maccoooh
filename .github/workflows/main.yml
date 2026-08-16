@@ -1,0 +1,36 @@
+name: Temporary
+
+on:
+  workflow_dispatch:
+
+jobs:
+  proxy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: "km4mghN5W611CNTRL"
+          oauth-secret: "tskey-client-km4mghN5W611CNTRL-RaYkrn9fK1RptKHQ1Z212RTQz8KAM1YoR"
+          tags: tag:ci
+
+      - name: Show runner Tailscale IP
+        run: |
+          echo "Tailscale IP:"
+          tailscale ip -4
+
+      - name: Test connection to phone
+        run: |
+          tailscale ping 100.115.100.34
+
+      - name: Show public IP
+        run: |
+          echo "Runner public IP:"
+          curl -s https://api.ipify.org
+          echo
+
+      - name: Keep runner alive
+        run: |
+          echo "Temporary runner is running."
+          sleep 3600
