@@ -1,7 +1,10 @@
-name: Temporary
+name: Temporary SOCKS5 Proxy
 
 on:
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   proxy:
@@ -11,26 +14,60 @@ jobs:
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
         with:
-          oauth-client-id: "km4mghN5W611CNTRL"
-          oauth-secret: "tskey-client-km4mghN5W611CNTRL-RaYkrn9fK1RptKHQ1Z212RTQz8KAM1YoR"
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
+          ping: 100.115.100.34
 
-      - name: Show runner Tailscale IP
+      - name: Get Tailscale IP
         run: |
-          echo "Tailscale IP:"
-          tailscale ip -4
+          TS_IP=$(tailscale ip -4)
+          echo "TS_IP=$TS_IP" >> "$GITHUB_ENV"
+          echo "Runner Tailscale IP: $TS_IP"
 
-      - name: Test connection to phone
+      - name: Install Dante
         run: |
-          tailscale ping 100.115.100.34
+          sudo apt-get update
+          sudo apt-get install -y dante-server
 
-      - name: Show public IP
+      - name: Configure SOCKS5
         run: |
-          echo "Runner public IP:"
-          curl -s https://api.ipify.org
+          sudo tee /etc/danted.conf > /dev/null <<EOF
+          logoutput: stderr
+          internal: ${TS_IP} port = 1080
+          external: eth0
+          clientmethod: none
+          socksmethod: none
+          user.privileged: root
+          user.notprivileged: nobody
+
+          client pass {
+              from: 100.64.0.0/10 to: ${TS_IP}
+          }
+
+          socks pass {
+              from: 100.64.0.0/10 to: 0.0.0.0/0
+              command: connect
+              protocol: tcp
+          }
+          EOF
+
+      - name: Start SOCKS5
+        run: |
+          sudo systemctl restart danted
+          sleep 3
+          sudo systemctl --no-pager status danted
+
+      - name: Test SOCKS5
+        run: |
+          curl --socks5-hostname ${TS_IP}:1080 https://api.ipify.org
           echo
 
-      - name: Keep runner alive
+      - name: Show Proxy
         run: |
-          echo "Temporary runner is running."
+          echo "SOCKS5 HOST: ${TS_IP}"
+          echo "SOCKS5 PORT: 1080"
+
+      - name: Keep Alive
+        run: |
           sleep 3600
